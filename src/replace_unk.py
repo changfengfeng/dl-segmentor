@@ -25,7 +25,7 @@ def main(argc, argv):
     tokens = []
     for s in ss:
       if s in vobsMap:
-        tokens.append(s)
+        tokens.append(str(s))
       else:
         tokens.append("<UNK>")
     oup.write("%s\n" % (" ".join(tokens)))

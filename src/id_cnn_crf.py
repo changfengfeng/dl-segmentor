@@ -3,34 +3,33 @@ import numpy as np
 import time
 
 class Model:
-    """ Define the bi direction lstm plus crf for struct prediction
-
-    This model can be used for segmentor, pos, ner tasks of nlp
+    """
+    Define the id cnn + crf model for sequence tagging
     """
 
-    def __init__(self, vocab_size, embedding_size, hidden_size, lstm_layers,
-            keep_rate, class_num, learning_rate, gradients_clip, max_seq_length
-            ):
+    def __init__(self, vocab_size, embedding_size, filter_num, filter_height,
+            block_times, cnn_layers, keep_rate, class_num, learning_rate,
+            max_seq_length):
         """
-
         Args:
             vocab_size: vocabulary size for embedding layer
             embedding_size: embedding size for embedding layer
-            hidden_size: hidden units size of lstm layer
-            lstm_layers: if using multilayers lstm
+            filter_size: kernel size of cnn
+            block_times: id cnn block repeat times
+            cnn_layers: the cnn layers config list
             keep_rate: the keep rate of every lstm output
             learning_rate: the initial learning rate
-            gradients_clip: using gradients clip for lstm training
+            max_seq_len: the max sequence length
         """
 
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
-        self.hidden_size = hidden_size
-        self.lstm_layers = lstm_layers
-        self.learning_rate = learning_rate
-        self.gradients_clip = gradients_clip
         self.class_num = class_num
         self.max_seq_length = max_seq_length
+        self.block_times = block_times
+        self.cnn_layers = cnn_layers
+        self.filter_num = filter_num
+        self.filter_height = filter_height
 
         # begin to create the graph
 
@@ -52,42 +51,52 @@ class Model:
                     shape=[self.vocab_size, self.embedding_size],
                     dtype=tf.float32,
                     initializer=tf.truncated_normal_initializer(stddev=0.1))
-            #self.embeddings = tf.Variable(w2v_vectors, dtype=tf.float32,
-            #    name="embeddings")
 
-            self.inputs = tf.nn.embedding_lookup(self.embeddings, self.x_holder)
+            embedding_outputs = tf.nn.embedding_lookup(self.embeddings, self.x_holder)
+            # shape is (?,1,max_seq,embedding)
+            self.inputs = tf.expand_dims(embedding_outputs, axis=1)
 
-        with tf.variable_scope("lstms"):
-            def _get_cell(hidden_size, keep_rate):
-                lstm = tf.nn.rnn_cell.BasicLSTMCell(hidden_size)
-                cell = tf.nn.rnn_cell.DropoutWrapper(lstm,
-                        output_keep_prob=keep_rate, dtype=tf.float32)
-                return cell
+        with tf.variable_scope("idcnn"):
+            filter_weight = tf.get_variable(name="first_cnn_weight",
+                    shape=[1, filter_height, embedding_size, filter_num],
+                    dtype=tf.float32,
+                    initializer=tf.contrib.layers.xavier_initializer())
+            id_cnn_inputs = tf.nn.conv2d(self.inputs,
+                    filter_weight, strides=[1, 1, 1, 1], padding='SAME')
+            idcnn_final_outputs = []
+            for i in range(block_times):
+                with tf.variable_scope("idcnn_block", reuse = True if i > 0 else
+                        False):
+                    for j in range(len(cnn_layers)):
+                        rate = cnn_layers[j]['rate']
+                        id_cnn_weights = tf.get_variable(name="id_cnn_w%d" % j,
+                                shape=[1, filter_height, filter_num, filter_num],
+                                dtype=tf.float32,
+                                initializer=tf.contrib.layers.xavier_initializer())
+                        conv = tf.nn.atrous_conv2d(id_cnn_inputs,
+                                id_cnn_weights,
+                                rate, padding="SAME")
+                        id_cnn_bias = tf.get_variable(name="id_cnn_b%d" % j,
+                                shape=[filter_num], dtype=tf.float32)
+                        conv = tf.nn.bias_add(conv, id_cnn_bias)
+                        conv = tf.nn.relu(conv)
 
-            if self.lstm_layers > 1:
-                forward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [_get_cell(self.hidden_size, self.keep_rate) for _ in
-                            self.lstm_layers])
-                backward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [_get_cell(self.hidden_size, self.keep_rate) for _ in
-                            self.lstm_layers])
-            else:
-                forward_lstm_cell = _get_cell(self.hidden_size, self.keep_rate)
-                backward_lstm_cell = _get_cell(self.hidden_size, self.keep_rate)
-
-            lstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
-                    forward_lstm_cell, backward_lstm_cell,
-                    self.inputs, self.real_length, dtype=tf.float32)
-            self.bi_outputs = tf.concat(lstm_outputs, axis=2)
+                        id_cnn_inputs = conv
+                        if j + 1 == len(cnn_layers):
+                            idcnn_final_outputs.append(conv)
+            # merg the last output of echo block
+            idcnn_block_outputs = tf.concat(idcnn_final_outputs, axis=-1)
+            idcnn_block_outputs_dropout = tf.nn.dropout(idcnn_block_outputs,
+                    self.keep_rate)
+            projection_inputs = tf.reshape(idcnn_block_outputs, [-1, block_times * filter_num])
 
         with tf.variable_scope("projection"):
-            w = tf.get_variable(name="w", shape=[hidden_size * 2, class_num],
+            w = tf.get_variable(name="w", shape=[block_times * filter_num, class_num],
                     dtype=tf.float32,
                     initializer = tf.contrib.layers.xavier_initializer())
             b = tf.get_variable(name="bias", shape=[class_num],
                     dtype=tf.float32,
                     initializer = tf.constant_initializer(0))
-            projection_inputs = tf.reshape(self.bi_outputs, shape=[-1, hidden_size * 2])
             self.logits = tf.matmul(projection_inputs, w) + b
 
         with tf.variable_scope("loss"):
@@ -97,33 +106,16 @@ class Model:
                     self.crf_inputs, self.y_holder, self.real_length)
             self.loss = tf.reduce_mean(-loss)
 
-            tvars = tf.trainable_variables()
-            grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars),
-                    gradients_clip)
-            optimizer = tf.train.AdamOptimizer(self.learning_rate)
-            self.train_op = optimizer.apply_gradients(zip(grads, tvars))
+            # TODO
+            self.global_step = tf.Variable(0, trainable=False)
+            self.learning_rate = tf.train.exponential_decay(learning_rate,
+                        self.global_step, 4000, 0.9)
+            self.train_op = tf.contrib.layers.optimize_loss(self.loss,
+                        global_step = self.global_step,
+                        learning_rate = self.learning_rate, optimizer="Adam")
+
             #optimizer = tf.train.AdamOptimizer(self.learning_rate)
             #self.train_op = optimizer.minimize(self.loss)
-
-    def batch_train_inputs(self, input_fn, batch_size):
-        filename_queue = tf.train.string_input_producer([input_fn])
-        reader = tf.TextLineReader(skip_header_lines=0)
-        key, value = reader.read(filename_queue)
-        decoded = tf.decode_csv(
-                value,
-                field_delim=' ',
-                record_defaults=[[0] for i in range(self.max_seq_length * 2)])
-        # shuffle batches shape is [item_length, batch_size]
-        shuffle_batches = tf.train.shuffle_batch(decoded,
-                                  batch_size=batch_size,
-                                  capacity=batch_size * 50,
-                                  min_after_dequeue=batch_size)
-
-        features = tf.transpose(tf.stack(shuffle_batches[0:self.max_seq_length]))
-        label = tf.transpose(tf.stack(shuffle_batches[self.max_seq_length:]))
-
-        return features, label
-
 
     def train(self, train_inputs, validate_inputs, max_train_steps, batch_size,
             embeddings):
@@ -211,7 +203,7 @@ class Model:
                     if self.train_step > max_train_steps:
                         break;
                     if self.train_step % 10 == 0:
-                        print("left loss {:.4f} at step {}".format(loss_val,
+                        print("loss {:.4f} at step {}".format(loss_val,
                             self.train_step))
 
 
