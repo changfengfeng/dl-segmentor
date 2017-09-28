@@ -83,7 +83,7 @@ class Model:
             logits = tf.matmul(projection_inputs,
                     self.projection_weight) + self.projection_bias
             crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
-                self.class_num])
+                self.class_num], name="logits_crf")
             return crf_inputs
 
     def loss(self, x_holder, y_holder):
