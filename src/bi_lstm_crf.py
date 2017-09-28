@@ -105,26 +105,6 @@ class Model:
             #optimizer = tf.train.AdamOptimizer(self.learning_rate)
             #self.train_op = optimizer.minimize(self.loss)
 
-    def batch_train_inputs(self, input_fn, batch_size):
-        filename_queue = tf.train.string_input_producer([input_fn])
-        reader = tf.TextLineReader(skip_header_lines=0)
-        key, value = reader.read(filename_queue)
-        decoded = tf.decode_csv(
-                value,
-                field_delim=' ',
-                record_defaults=[[0] for i in range(self.max_seq_length * 2)])
-        # shuffle batches shape is [item_length, batch_size]
-        shuffle_batches = tf.train.shuffle_batch(decoded,
-                                  batch_size=batch_size,
-                                  capacity=batch_size * 50,
-                                  min_after_dequeue=batch_size)
-
-        features = tf.transpose(tf.stack(shuffle_batches[0:self.max_seq_length]))
-        label = tf.transpose(tf.stack(shuffle_batches[self.max_seq_length:]))
-
-        return features, label
-
-
     def train(self, train_inputs, validate_inputs, max_train_steps, batch_size,
             embeddings):
         """ Train the model.
