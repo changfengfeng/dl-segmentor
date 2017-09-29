@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import word2vec as w2v
 from bi_lstm_crf_queue import Model as BiLstmModel
+from id_cnn_crf_queue import Model as IdCnnModel
 
 FLAGS = tf.flags.FLAGS
 
@@ -30,8 +31,8 @@ def main(_):
     vocab_size, embedding_size = w2v_model.vectors.shape
     print("vocab {}, embedding_size {}".format(vocab_size,
         embedding_size))
-
-    model = BiLstmModel(
+    if FLAGS.using_lstm:
+        model = BiLstmModel(
             w2v_model.vectors,
             FLAGS.hidden_size,
             FLAGS.lstm_layers,
@@ -43,6 +44,25 @@ def main(_):
             FLAGS.log_dir,
             FLAGS.max_train_steps
             )
+    else:
+        cnn_layers = [
+             {'rate' : 1},
+             {'rate' : 1},
+             {'rate' : 2}
+            ]
+        model = IdCnnModel(
+            w2v_model.vectors,
+            embedding_size,
+            FLAGS.filter_num,
+            FLAGS.filter_height,
+            FLAGS.block_times,
+            cnn_layers,
+            FLAGS.keep_rate,
+            FLAGS.class_num,
+            FLAGS.learning_rate,
+            FLAGS.max_seq_length,
+            FLAGS.log_dir,
+            FLAGS.max_train_steps)
 
     model.train(FLAGS.batch_size, FLAGS.train_data_path,
             FLAGS.validate_data_path)

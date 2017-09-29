@@ -38,6 +38,46 @@ class Segmentor:
         print(self.transition_params)
         print(self.logits)
 
+    def test_accuracy(self, validate_data_fn):
+        x_inputs = []
+        y_inputs = []
+        with open(validate_data_fn, "r") as f:
+            while True:
+                line = f.readline()
+                line = line.strip()
+                if line == None or len(line) == 0:
+                    break
+                ints =  np.array(line.split(" "))
+                ints = ints.astype(int)
+                assert len(ints) == self.max_seq_length * 2
+                x_inputs.append(ints[0:self.max_seq_length])
+                y_inputs.append(ints[self.max_seq_length:])
+
+        print("reading {} lines validate data".format(len(x_inputs)))
+        assert len(x_inputs) == len(y_inputs)
+        x_inputs_array = np.array(x_inputs, dtype="int32")
+        y_inputs_array = np.array(y_inputs, dtype="int32")
+
+        test_real_length = tf.reduce_sum(tf.sign(self.x_inputs), axis=1)
+
+        logits_val, keep_rate_val, transitions, real_lengths = self.sess.run(
+                [self.logits, self.keep_rate, self.transition_params,
+                    test_real_length],
+                {self.x_inputs: x_inputs_array, self.keep_rate: 1.0})
+
+        correct_label = 0
+        total_label = 0
+
+        for logit, validate_y, real_length in zip(
+            logits_val, y_inputs_array, real_lengths):
+            real_logit = logit[:real_length]
+            real_validate_y = validate_y[:real_length]
+            decoded_seq, _ = tf.contrib.crf.viterbi_decode(real_logit, transitions)
+            correct_label += np.sum(np.equal(decoded_seq, real_validate_y))
+            total_label += len(decoded_seq)
+
+        print("validate accuray: {:.4f}".format(correct_label / total_label))
+
     def segment(self, sentence):
         """segment sentence
 
@@ -83,10 +123,10 @@ class Segmentor:
 
         print("\n".join(output))
 
-
 if __name__ == "__main__":
     segmentor = Segmentor("data/char_pepole_vec.txt",
     "model/segment_model.pbtxt", "segment", 80)
+    #segmentor.test_accuracy("model/test.txt")
     while True:
         sentence = input(">")
         segmentor.segment(sentence)
