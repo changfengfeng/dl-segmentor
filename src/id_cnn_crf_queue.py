@@ -91,7 +91,7 @@ class Model:
             # merg the last output of echo block
             idcnn_block_outputs = tf.concat(idcnn_final_outputs, axis=-1)
             idcnn_block_outputs_dropout = tf.nn.dropout(idcnn_block_outputs, self.keep_rate)
-            projection_inputs = tf.reshape(idcnn_block_outputs, [-1,
+            projection_inputs = tf.reshape(idcnn_block_outputs_dropout, [-1,
                 self.block_times * self.filter_num])
 
         logits = tf.matmul(projection_inputs, self.projection_weight) + self.projection_bias
