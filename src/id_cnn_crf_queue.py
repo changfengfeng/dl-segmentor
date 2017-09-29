@@ -65,8 +65,8 @@ class Model:
                     dtype=tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
 
-            id_cnn_inputs = tf.nn.conv2d(name="first_conv2d", inputs,
-                    self.filter_weight, strides=[1, 1, 1, 1], padding='SAME')
+            id_cnn_inputs = tf.nn.conv2d(inputs, filter_weight, strides=[1, 1, 1, 1],
+                    padding='SAME', name="first_conv2d")
 
             idcnn_final_outputs = []
             for i in range(self.block_times):
@@ -94,8 +94,7 @@ class Model:
             projection_inputs = tf.reshape(idcnn_block_outputs, [-1,
                 self.block_times * self.filter_num])
 
-        logits = tf.matmul(projection_inputs, self.projection_weight) +
-            self.projection_bias
+        logits = tf.matmul(projection_inputs, self.projection_weight) + self.projection_bias
         crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
             self.class_num], name="logits_crf" if reuse else None)
         return crf_inputs

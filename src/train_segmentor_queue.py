@@ -55,7 +55,7 @@ def main(_):
             embedding_size,
             FLAGS.filter_num,
             FLAGS.filter_height,
-            FLAGS.block_times,
+            3,
             cnn_layers,
             FLAGS.keep_rate,
             FLAGS.class_num,
