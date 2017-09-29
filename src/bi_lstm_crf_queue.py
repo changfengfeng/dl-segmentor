@@ -76,15 +76,15 @@ class Model:
             lstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
                     forward_lstm_cell, backward_lstm_cell,
                     inputs, real_length, dtype=tf.float32)
-            bi_outputs = tf.concat(lstm_outputs, axis=2)
+        bi_outputs = tf.concat(lstm_outputs, axis=2)
 
-            projection_inputs = tf.reshape(bi_outputs, shape=[-1,
-                self.hidden_units * 2])
-            logits = tf.matmul(projection_inputs,
-                    self.projection_weight) + self.projection_bias
-            crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
-                self.class_num], name="logits_crf")
-            return crf_inputs
+        projection_inputs = tf.reshape(bi_outputs, shape=[-1,
+            self.hidden_units * 2])
+        logits = tf.matmul(projection_inputs,
+            self.projection_weight) + self.projection_bias
+        crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
+            self.class_num], name="logits_crf" if reuse else None)
+        return crf_inputs
 
     def loss(self, x_holder, y_holder):
         """ Compute the loss for the training
