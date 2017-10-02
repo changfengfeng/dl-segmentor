@@ -3,7 +3,7 @@ source ~/.bash_profile
 
 #python src/process_pepole_data.py data/2014 data/char_pepole.txt
 
-#src/word2vec/word2vec -train data/char_pepole.txt -save-vocab data/char_pepole_vocab.txt -min-count 3
+src/word2vec/word2vec -train data/char_pepole.txt -save-vocab /tmp/char_pepole_vocab.txt -min-count 2
 
 #python src/replace_unk.py data/char_pepole_vocab.txt data/char_pepole.txt data/char_pepole_unk.txt
 
@@ -15,4 +15,4 @@ source ~/.bash_profile
 
 #python src/split_data.py data/all_data.txt
 
-python train/freeze_graph.py --input_graph model/graph.pbtxt --input_checkpoint model/best_model --output_node_names "transitions,logits_crf,test_input_x" --output_graph model/segment_model.pbtxt
+#python train/freeze_graph.py --input_graph model/graph.pbtxt --input_checkpoint model/best_model --output_node_names "transitions,logits_crf,test_input_x" --output_graph model/segment_model.pbtxt

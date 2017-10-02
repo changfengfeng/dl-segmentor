@@ -4,16 +4,19 @@ import tensorflow as tf
 import numpy as np
 import word2vec as w2v
 import time
+import user_dict_seg as ud
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_bool("using_lstm", False, "using lstm or id cnn model")
-tf.flags.DEFINE_bool("testing", False, "test accuracy")
+tf.flags.DEFINE_integer("mode", 0, "0: test the test.txt, 1: segment the stdin, 2: segment the file")
+tf.flags.DEFINE_string("segment_input_fn", "", "file to segment it content")
+tf.flags.DEFINE_bool("debug", True, "wheather to print the debug message")
 
 class Segmentor:
     """ Import lexicon and model, segment text
     """
 
-    def __init__(self, lexicon_path, model_path, model_prefix, max_seq_length):
+    def __init__(self, user_dict_path, lexicon_path, model_path, model_prefix, max_seq_length):
 
         self.pair_marks = {"(": ")",
                 "（" : "）",
@@ -54,6 +57,10 @@ class Segmentor:
         self.transition_params = graph.get_tensor_by_name("%s/transitions:0" %
                 model_prefix)
         self.sess = tf.Session()
+
+        #user dict
+        self.trie_tree = ud.TrieTree()
+        self.trie_tree.read_from_file("model/user_dict.txt")
 
     def test_accuracy(self, validate_data_fn):
         x_inputs = []
@@ -118,7 +125,12 @@ class Segmentor:
                 start = idx + 1
         if start < len(sentence):
             results.append(sentence[start:])
-        return results
+        outputs = []
+        for i in range(len(results)):
+            r = results[i].strip()
+            if len(r) > 0:
+                outputs.append(r)
+        return outputs
 
     def segment(self, sentence):
         """segment sentence
@@ -135,9 +147,9 @@ class Segmentor:
                 s = split_sentences[i][j]
                 sid = self.lexicon[s] if s in self.lexicon else self.unk
                 x_inputs_val[i,j] = sid
-
-        print(split_sentences)
-        print(x_inputs_val)
+        if FLAGS.debug:
+            print(split_sentences)
+            print(x_inputs_val)
 
         real_lengths = np.sum(np.sign(x_inputs_val), axis=1)
 
@@ -148,8 +160,19 @@ class Segmentor:
 
         # TODO using user defined dict
         decoded_results = []
-        for logit, real_length in zip(logits_val, real_lengths):
+        for logit, real_length, sentence in zip(logits_val, real_lengths,
+                split_sentences):
             real_logit = logit[:real_length]
+            if FLAGS.debug:
+                print(real_logit)
+            if self.trie_tree.num_node > 1:
+                scorer = ud.UserScore(sentence, self.trie_tree)
+                user_score = scorer.get_score()
+                if FLAGS.debug:
+                    print(user_score)
+                real_logit += user_score
+            if FLAGS.debug:
+                print(real_logit)
             decoded_seq, _ = tf.contrib.crf.viterbi_decode(real_logit, transitions)
             decoded_results.append(decoded_seq)
         end = time.time()
@@ -164,7 +187,7 @@ class Segmentor:
                 if t == 0:
                     results.append(s)
                 if t == 1:
-                    word += s
+                    word = s
                 if t == 2:
                     word += s
                 if t == 3:
@@ -177,17 +200,24 @@ class Segmentor:
 
 def main(_):
     if FLAGS.using_lstm:
-        model_fn = "model/segment_model.pbtxt"
+        model_fn = "model/segment_model_30000.pbtxt"
     else:
-        model_fn = "model/segment_model_idcnn.pbtxt"
+        model_fn = "model/segment_model_idcnn_30000.pbtxt"
 
-    segmentor = Segmentor("model/char_pepole_vec.txt", model_fn, "segment", 80)
-    if FLAGS.testing:
+    segmentor = Segmentor("model/user_dict.txt",
+            "model/char_pepole_vec.txt", model_fn, "segment", 80)
+    if FLAGS.mode == 0:
         segmentor.test_accuracy("model/test.txt")
-    else:
+    elif FLAGS.mode == 1:
         while True:
             sentence = input(">")
             segmentor.segment(sentence)
+    elif FLAGS.mode == 2:
+        with open(FLAGS.segment_input_fn, "r") as f:
+            for line in f:
+                print(line.strip())
+                segmentor.segment(line)
+                print("\n")
 
 if __name__ == "__main__":
     tf.app.run()
