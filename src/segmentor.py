@@ -49,10 +49,6 @@ class Segmentor:
 
         graph = tf.get_default_graph()
         self.x_inputs = graph.get_tensor_by_name("%s/test_input_x:0" % model_prefix)
-        if FLAGS.using_lstm:
-            self.keep_rate = graph.get_tensor_by_name("%s/lstm/keep_rate:0" % model_prefix)
-        else:
-            self.keep_rate = graph.get_tensor_by_name("%s/id_cnn/keep_rate:0" % model_prefix)
         self.logits = graph.get_tensor_by_name("%s/logits_crf:0" % model_prefix)
         self.transition_params = graph.get_tensor_by_name("%s/transitions:0" %
                 model_prefix)
@@ -60,7 +56,8 @@ class Segmentor:
 
         #user dict
         self.trie_tree = ud.TrieTree()
-        self.trie_tree.read_from_file("model/user_dict.txt")
+        if len(user_dict_path) > 0:
+            self.trie_tree.read_from_file(user_dict_path)
 
     def test_accuracy(self, validate_data_fn):
         x_inputs = []
@@ -84,10 +81,10 @@ class Segmentor:
 
         test_real_length = tf.reduce_sum(tf.sign(self.x_inputs), axis=1)
 
-        logits_val, keep_rate_val, transitions, real_lengths = self.sess.run(
-                [self.logits, self.keep_rate, self.transition_params,
+        logits_val, transitions, real_lengths = self.sess.run(
+                [self.logits, self.transition_params,
                     test_real_length],
-                {self.x_inputs: x_inputs_array, self.keep_rate: 1.0})
+                {self.x_inputs: x_inputs_array})
 
         correct_label = 0
         total_label = 0
@@ -156,9 +153,8 @@ class Segmentor:
         start = time.time()
         logits_val, transitions = self.sess.run(
                 [self.logits, self.transition_params],
-                {self.x_inputs: x_inputs_val, self.keep_rate: 1.0})
+                {self.x_inputs: x_inputs_val})
 
-        # TODO using user defined dict
         decoded_results = []
         for logit, real_length, sentence in zip(logits_val, real_lengths,
                 split_sentences):
@@ -204,8 +200,8 @@ def main(_):
     else:
         model_fn = "model/segment_model_idcnn_30000.pbtxt"
 
-    segmentor = Segmentor("model/user_dict.txt",
-            "model/char_pepole_vec.txt", model_fn, "segment", 80)
+    segmentor = Segmentor("",
+            "model/vec.txt", model_fn, "segment", 80)
     if FLAGS.mode == 0:
         segmentor.test_accuracy("model/test.txt")
     elif FLAGS.mode == 1:

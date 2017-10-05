@@ -32,6 +32,19 @@ class Model:
         self.class_num = class_num
         self.max_seq_length = max_seq_length
 
+        # for debug display
+        self.pair_marks = {"(": ")",
+                "（" : "）",
+                "["  : "]",
+                "【" : "】",
+                "《" : "》",
+                '“'  : '”'}
+
+        self.break_marks = set(["。", ",", "，", " ", "\t", "?", "？", "!",
+            "！", ";", "；"])
+        self.pair_marks_reverse = {v:k for k, v in self.pair_marks.items()}
+
+
         # begin to create the graph
 
         with tf.variable_scope("inputs"):
@@ -105,8 +118,98 @@ class Model:
             #optimizer = tf.train.AdamOptimizer(self.learning_rate)
             #self.train_op = optimizer.minimize(self.loss)
 
+    def split_text(self, sentence):
+        """ split sentence to sentences by colon"""
+        results = []
+        start = 0
+        # state = 0 in pair marks, state = 1 not in pair makrs
+        state = 0
+        for idx in range(len(sentence)):
+            char = sentence[idx]
+            if char in self.pair_marks:
+                state = 1
+                if start < idx: # for case [][]
+                    results.append(sentence[start:idx])
+                start = idx
+            elif char in self.pair_marks_reverse and state == 1:
+                if self.pair_marks_reverse[char] == sentence[start]:
+                    state = 0
+                    results.append(sentence[start:idx+1])
+                    start = idx + 1
+            elif char in self.break_marks:
+                results.append(sentence[start:idx+1])
+                start = idx + 1
+        if start < len(sentence):
+            results.append(sentence[start:])
+        outputs = []
+        for i in range(len(results)):
+            r = results[i].strip()
+            if len(r) > 0:
+                outputs.append(r)
+        return outputs
+
+
+    def do_debug(self, sess, lexicon,
+            transition_params, debug_data_path):
+        """ Read the debug file, do inference, and output the segmented results
+
+        Args:
+            logits: crf inputs tensor
+            test_real_length: real length tensor
+            transition_params: the transition maxtrix
+        """
+        with open(debug_data_path, "r") as f:
+            for line in f:
+                sentence = line.strip()
+                split_sentences = self.split_text(sentence)
+
+                x_inputs_val = np.zeros([len(split_sentences), self.max_seq_length], dtype="int32")
+                for i in range(len(split_sentences)):
+                    for j in range(len(split_sentences[i])):
+                        s = split_sentences[i][j]
+                        sid = lexicon[s] if s in lexicon else lexicon['<UNK>']
+                        x_inputs_val[i,j] = sid
+                print(split_sentences)
+                print(x_inputs_val)
+
+                logits_val = sess.run(
+                            self.crf_inputs,
+                            {self.x_holder: x_inputs_val,
+                             self.keep_rate : 1.0})
+                real_lengths = np.sum(np.sign(x_inputs_val), axis=1)
+                decoded_results = []
+                for logit, real_length, sentence in zip(logits_val, real_lengths,
+                    split_sentences):
+                    real_logit = logit[:real_length]
+                    decoded_seq, _ = tf.contrib.crf.viterbi_decode(real_logit,
+                            transition_params)
+                    decoded_results.append(decoded_seq)
+
+                # decode crf
+                results = []
+                for sentence, tags in zip(split_sentences, decoded_results):
+                    assert len(sentence) == len(tags)
+                    word = ""
+                    for s, t in zip(sentence, tags):
+                        print(s, t)
+                        if t == 0:
+                            results.append(s)
+                        if t == 1:
+                            if len(word) > 0:
+                                results.append(word)
+                            word = s
+                        if t == 2:
+                            word += s
+                        if t == 3:
+                            word += s
+                            results.append(word)
+                            word = ""
+
+                for s in results:
+                    print("tok:", s)
+
     def train(self, train_inputs, validate_inputs, max_train_steps, batch_size,
-            embeddings):
+            embeddings, debug_data_path, lexicon):
         """ Train the model.
 
         Args:
@@ -157,6 +260,9 @@ class Model:
                     if self.train_step % 10 == 0:
                         print("loss {:.4f} at step {}, time {}".format(loss_val,
                             self.train_step, end - start))
+
+                        self.do_debug(sess, lexicon, transition_params_val,
+                                debug_data_path)
 
                     if self.train_step % 1000 == 0:
                         logits_val = sess.run(

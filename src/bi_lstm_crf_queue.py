@@ -23,20 +23,30 @@ class Model:
         self.log_dir = log_dir
         self.max_train_steps = max_train_steps
 
-        self.embeddings = tf.Variable(w2v_embeddings, trainable=True,
-                dtype=tf.float32, name="word_embedding")
+        self.embeddings = tf.Variable(w2v_embeddings, name="word_embedding", dtype=tf.float32)
 
         self.projection_weight = tf.get_variable(name="projection_weight",
                 shape=[hidden_units * 2, class_num],
-                dtype=tf.float32,
-                initializer=tf.contrib.layers.xavier_initializer())
+                initializer=tf.contrib.layers.xavier_initializer(),
+                regularizer=tf.contrib.layers.l2_regularizer(0.001))
 
-        self.projection_bias = tf.get_variable(name="projection_bias",
-                shape=[class_num],
-                dtype=tf.float32,
-                initializer=tf.constant_initializer(0))
+        self.projection_bias = tf.Variable(tf.zeros([class_num],
+            name="projection_bias"))
+
         self.test_input = tf.placeholder(name="test_input_x",
                 shape=[None, max_seq_length], dtype=tf.int32)
+
+        # for debug display
+        self.pair_marks = {"(": ")",
+                "（" : "）",
+                "["  : "]",
+                "【" : "】",
+                "《" : "》",
+                '“'  : '”'}
+
+        self.break_marks = set(["。", ",", "，", " ", "\t", "?", "？", "!",
+            "！", ";", "；"])
+        self.pair_marks_reverse = {v:k for k, v in self.pair_marks.items()}
 
     def inference(self, x_holder, real_length, reuse):
         """ Create the graph for inference and test
@@ -51,40 +61,40 @@ class Model:
         """
         inputs = tf.nn.embedding_lookup(self.embeddings, x_holder)
 
-        with tf.variable_scope("lstm", reuse=reuse):
-            self.keep_rate = tf.get_variable(name="keep_rate",
-                    shape=[], dtype=tf.float32, trainable=False,
-                    initializer=tf.constant_initializer(self.keep_rate_scalar))
+        length_64 = tf.cast(real_length, tf.int64)
+        with tf.variable_scope("bilstm", reuse=reuse):
+            forward_output, _ = tf.nn.dynamic_rnn(
+                tf.contrib.rnn.LSTMCell(self.hidden_units,
+                                        reuse=reuse),
+                inputs,
+                dtype=tf.float32,
+                sequence_length=real_length,
+                scope="RNN_forward")
+            backward_output_, _ = tf.nn.dynamic_rnn(
+                tf.contrib.rnn.LSTMCell(self.hidden_units,
+                                        reuse=reuse),
+                inputs=tf.reverse_sequence(inputs,
+                                           length_64,
+                                           seq_dim=1),
+                dtype=tf.float32,
+                sequence_length=real_length,
+                scope="RNN_backword")
 
-            def __get_cell(hidden_size, keep_rate):
-                lstm = tf.nn.rnn_cell.BasicLSTMCell(hidden_size,
-                        reuse=reuse)
-                cell = tf.nn.rnn_cell.DropoutWrapper(lstm,
-                        output_keep_prob=keep_rate, dtype=tf.float32)
-                return cell
+        backward_output = tf.reverse_sequence(backward_output_,
+                                              length_64,
+                                              seq_dim=1)
 
-            if self.lstm_layers > 1:
-                forward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [__get_cell(self.hidden_size, self.keep_rate) for _ in self.lstm_layers])
-                backward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [__get_cell(self.hidden_units, self.keep_rate) for _ in self.lstm_layers])
-            else:
-                forward_lstm_cell = __get_cell(self.hidden_units,
-                        self.keep_rate)
-                backward_lstm_cell = __get_cell(self.hidden_units,
-                        self.keep_rate)
-            lstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
-                    forward_lstm_cell, backward_lstm_cell,
-                    inputs, real_length, dtype=tf.float32)
-        bi_outputs = tf.concat(lstm_outputs, axis=2)
+        output = tf.concat([forward_output, backward_output], 2)
+        output = tf.reshape(output, [-1, self.hidden_units * 2])
+        if reuse is None or not reuse:
+            output = tf.nn.dropout(output, 0.5)
 
-        projection_inputs = tf.reshape(bi_outputs, shape=[-1,
-            self.hidden_units * 2])
-        logits = tf.matmul(projection_inputs,
-            self.projection_weight) + self.projection_bias
-        crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
-            self.class_num], name="logits_crf" if reuse else None)
-        return crf_inputs
+        matricized_unary_scores = tf.matmul(output, self.projection_weight) + self.projection_bias
+        unary_scores = tf.reshape(
+            matricized_unary_scores,
+            [-1, self.max_seq_length, self.class_num],
+            name="Reshape_7" if reuse else None)
+        return unary_scores
 
     def loss(self, x_holder, y_holder):
         """ Compute the loss for the training
@@ -96,7 +106,7 @@ class Model:
         Returns:
             return the loss tensor
         """
-        real_length = tf.reduce_sum(tf.sign(x_holder), axis=1)
+        real_length = tf.reduce_sum(tf.sign(tf.abs(x_holder)), axis=1)
         crf_inputs = self.inference(x_holder, real_length, False)
 
         loss, self.transition_params = tf.contrib.crf.crf_log_likelihood(
@@ -131,6 +141,90 @@ class Model:
 
         return correct_label / total_label
 
+    def split_text(self, sentence):
+        """ split sentence to sentences by colon"""
+        results = []
+        start = 0
+        # state = 0 in pair marks, state = 1 not in pair makrs
+        state = 0
+        for idx in range(len(sentence)):
+            char = sentence[idx]
+            if char in self.pair_marks:
+                state = 1
+                if start < idx: # for case [][]
+                    results.append(sentence[start:idx])
+                start = idx
+            elif char in self.pair_marks_reverse and state == 1:
+                if self.pair_marks_reverse[char] == sentence[start]:
+                    state = 0
+                    results.append(sentence[start:idx+1])
+                    start = idx + 1
+            elif char in self.break_marks:
+                results.append(sentence[start:idx+1])
+                start = idx + 1
+        if start < len(sentence):
+            results.append(sentence[start:])
+        outputs = []
+        for i in range(len(results)):
+            r = results[i].strip()
+            if len(r) > 0:
+                outputs.append(r)
+        return outputs
+
+
+    def do_debug(self, logits, test_real_length, sess, lexicon,
+            transition_params, debug_data_path):
+        """ Read the debug file, do inference, and output the segmented results
+
+        Args:
+            logits: crf inputs tensor
+            test_real_length: real length tensor
+            transition_params: the transition maxtrix
+        """
+        with open(debug_data_path, "r") as f:
+            for line in f:
+                sentence = line.strip()
+                split_sentences = self.split_text(sentence)
+
+                x_inputs_val = np.zeros([len(split_sentences), self.max_seq_length], dtype="int32")
+                for i in range(len(split_sentences)):
+                    for j in range(len(split_sentences[i])):
+                        s = split_sentences[i][j]
+                        sid = lexicon[s] if s in lexicon else lexicon['<UNK>']
+                        x_inputs_val[i,j] = sid
+                print(split_sentences)
+                logits_val, real_lengths = sess.run(
+                        [logits, test_real_length],
+                        {self.test_input: x_inputs_val})
+                decoded_results = []
+                for logit, real_length, sentence in zip(logits_val, real_lengths,
+                    split_sentences):
+                    real_logit = logit[:real_length]
+                    decoded_seq, _ = tf.contrib.crf.viterbi_decode(real_logit,
+                            transition_params)
+                    decoded_results.append(decoded_seq)
+
+                # decode crf
+                results = []
+                for sentence, tags in zip(split_sentences, decoded_results):
+                    assert len(sentence) == len(tags)
+                    word = ""
+                    for s, t in zip(sentence, tags):
+                        print(s, t)
+                        if t == 0:
+                            results.append(s)
+                        if t == 1:
+                            if len(word) > 0:
+                                results.append(word)
+                            word = s
+                        if t == 2:
+                            word += s
+                        if t == 3:
+                            word += s
+                            results.append(word)
+                            word = ""
+                print("]  tok:[".join(results))
+
     def load_data(self, validate_data_fn):
         """ Read the validate data
 
@@ -158,7 +252,8 @@ class Model:
         assert len(x_inputs) == len(y_inputs)
         return np.array(x_inputs, dtype="int32"), np.array(y_inputs, dtype="int32")
 
-    def train(self, batch_size, train_data_fn, validate_data_fn):
+    def train(self, batch_size, train_data_fn, validate_data_fn,
+            debug_data_path, lexicon):
         """ Creat train op to train the graph on the data
 
         Args:
@@ -166,6 +261,8 @@ class Model:
             train_data_fn: the train data file name
             validate_data_fn: the validate data fn
         """
+        print("training ", train_data_fn)
+        print("validate ", validate_data_fn)
 
         filename_queue = tf.train.string_input_producer([train_data_fn])
         reader = tf.TextLineReader(skip_header_lines=0)
@@ -184,14 +281,14 @@ class Model:
         labels = tf.transpose(tf.stack(shuffle_batches[self.max_seq_length:]))
 
         loss = self.loss(features, labels)
-        tvars = tf.trainable_variables()
-        grads, _ = tf.clip_by_global_norm(tf.gradients(loss, tvars),
-                    self.gradients_clip)
+        #tvars = tf.trainable_variables()
+        #grads, _ = tf.clip_by_global_norm(tf.gradients(loss, tvars),
+        #            self.gradients_clip)
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        train_op = optimizer.apply_gradients(zip(grads, tvars))
+        train_op = optimizer.minimize(loss)
 
         test_input_x, test_input_y = self.load_data(validate_data_fn)
-        test_real_length = tf.reduce_sum(tf.sign(self.test_input), axis=1)
+        test_real_length = tf.reduce_sum(tf.sign(tf.abs(self.test_input)), axis=1)
         test_logits = self.inference(self.test_input, test_real_length,
                 reuse=True)
 
@@ -205,17 +302,20 @@ class Model:
                 start = time.time()
                 loss_val, transition_params_val, _ = sess.run(
                         [loss, self.transition_params, train_op],
-                        {self.keep_rate : keep_rate})
+                        {})
                 end = time.time()
 
                 if step > 0 and step % 10 == 0:
                     print("loss {:.4f} at step {}, time {}".format(loss_val, step, end-start))
 
+                    self.do_debug(test_logits, test_real_length, sess, lexicon,
+                            transition_params_val, debug_data_path)
+
                 if step > 0 and step % 1000 == 0:
                     logits, test_real_length_val = sess.run(
                             [test_logits, test_real_length],
                             {self.test_input: test_input_x,
-                             self.keep_rate: 1.0})
+                                })
 
                     accuracy = self.calculate_accuracy(logits, test_input_y,
                             test_real_length_val, transition_params_val)

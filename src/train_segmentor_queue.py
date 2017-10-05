@@ -18,6 +18,8 @@ tf.flags.DEFINE_string("train_data_path",
         "data/train.txt", "")
 tf.flags.DEFINE_string("validate_data_path",
         "data/test.txt", "")
+tf.flags.DEFINE_string("debug_data_path",
+        "data/debug.txt", "data to do debug display")
 tf.flags.DEFINE_string("embedding_path",
         "data/char_pepole_vec.txt", "")
 tf.flags.DEFINE_integer("max_train_steps", 150000, "")
@@ -65,8 +67,10 @@ def main(_):
             FLAGS.log_dir,
             FLAGS.max_train_steps)
 
+    lexicon = {w:i for i, w in enumerate(w2v_model.vocab)}
+
     model.train(FLAGS.batch_size, FLAGS.train_data_path,
-            FLAGS.validate_data_path)
+            FLAGS.validate_data_path, FLAGS.debug_data_path, lexicon)
 
 if __name__ == "__main__":
     tf.app.run()

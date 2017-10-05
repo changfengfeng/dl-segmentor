@@ -18,6 +18,8 @@ tf.flags.DEFINE_string("validate_data_path",
         "data/test.txt", "")
 tf.flags.DEFINE_string("embedding_path",
         "data/char_pepole_vec.txt", "")
+tf.flags.DEFINE_string("debug_data_path",
+        "data/debug.txt", "for debug display")
 tf.flags.DEFINE_integer("max_train_steps", 150000, "")
 tf.flags.DEFINE_integer("batch_size", 100, "")
 tf.flags.DEFINE_bool("using_lstm", True, "")
@@ -89,8 +91,10 @@ def main(_):
         validate_inputs_np = np.array(validate_inputs, dtype="int32")
 
     # training
+
+    lexicon = {w:i for i, w in enumerate(w2v_model.vocab)}
     model.train(train_inputs_np, validate_inputs_np, FLAGS.max_train_steps,
-            FLAGS.batch_size, w2v_model.vectors)
+            FLAGS.batch_size, w2v_model.vectors, FLAGS.debug_data_path, lexicon)
 
 if __name__ == "__main__":
     tf.app.run()
