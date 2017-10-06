@@ -32,6 +32,7 @@ def main(_):
     vocab_size, embedding_size = w2v_model.vectors.shape
     print("vocab {}, embedding_size {}".format(vocab_size,
         embedding_size))
+
     if FLAGS.using_lstm:
         model = BiLstmModel(
             w2v_model.vectors,

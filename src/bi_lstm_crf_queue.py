@@ -38,41 +38,40 @@ class Model:
         self.test_input = tf.placeholder(name="test_input_x",
                 shape=[None, max_seq_length], dtype=tf.int32)
 
-    def inference(self, x_holder, real_length, reuse):
+    def inference(self, x_holder, reuse):
         """ Create the graph for inference and test
 
         Args:
             x_holder: the inputs tensor [batch_size, max_seq_length]
-            real_length: the real length of input [batch_size]
             reuse: True for the testing, False for the training
 
         Returns:
             return the logits tensor
         """
         inputs = tf.nn.embedding_lookup(self.embeddings, x_holder)
+        real_length = tf.reduce_sum(tf.sign(x_holder), axis=1)
 
         with tf.variable_scope("lstm", reuse=reuse):
             self.keep_rate = tf.get_variable(name="keep_rate",
                     shape=[], dtype=tf.float32, trainable=False,
                     initializer=tf.constant_initializer(self.keep_rate_scalar))
 
-            def __get_cell(hidden_size, keep_rate):
-                lstm = tf.nn.rnn_cell.BasicLSTMCell(hidden_size,
+            def __get_cell(hidden_size):
+                cell = tf.nn.rnn_cell.LSTMCell(hidden_size,
                         reuse=reuse)
-                cell = tf.nn.rnn_cell.DropoutWrapper(lstm,
-                        output_keep_prob=keep_rate, dtype=tf.float32)
+                if not reuse:
+                    cell = tf.nn.rnn_cell.DropoutWrapper(cell,
+                        output_keep_prob=0.5, dtype=tf.float32)
                 return cell
 
             if self.lstm_layers > 1:
                 forward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [__get_cell(self.hidden_size, self.keep_rate) for _ in self.lstm_layers])
+                        [__get_cell(self.hidden_units) for _ in self.lstm_layers])
                 backward_lstm_cell = tf.nn.rnn_cell.MultiRNNCell(
-                        [__get_cell(self.hidden_units, self.keep_rate) for _ in self.lstm_layers])
+                        [__get_cell(self.hidden_units) for _ in self.lstm_layers])
             else:
-                forward_lstm_cell = __get_cell(self.hidden_units,
-                        self.keep_rate)
-                backward_lstm_cell = __get_cell(self.hidden_units,
-                        self.keep_rate)
+                forward_lstm_cell = __get_cell(self.hidden_units)
+                backward_lstm_cell = __get_cell(self.hidden_units)
             lstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
                     forward_lstm_cell, backward_lstm_cell,
                     inputs, real_length, dtype=tf.float32)
@@ -84,7 +83,7 @@ class Model:
             self.projection_weight) + self.projection_bias
         crf_inputs = tf.reshape(logits, shape=[-1, self.max_seq_length,
             self.class_num], name="logits_crf" if reuse else None)
-        return crf_inputs
+        return crf_inputs, real_length
 
     def loss(self, x_holder, y_holder):
         """ Compute the loss for the training
@@ -96,8 +95,7 @@ class Model:
         Returns:
             return the loss tensor
         """
-        real_length = tf.reduce_sum(tf.sign(x_holder), axis=1)
-        crf_inputs = self.inference(x_holder, real_length, False)
+        crf_inputs, real_length = self.inference(x_holder, False)
 
         loss, self.transition_params = tf.contrib.crf.crf_log_likelihood(
                     crf_inputs, y_holder, real_length)
@@ -191,9 +189,7 @@ class Model:
         train_op = optimizer.apply_gradients(zip(grads, tvars))
 
         test_input_x, test_input_y = self.load_data(validate_data_fn)
-        test_real_length = tf.reduce_sum(tf.sign(self.test_input), axis=1)
-        test_logits = self.inference(self.test_input, test_real_length,
-                reuse=True)
+        test_logits, test_real_length = self.inference(self.test_input, True)
 
         sv = tf.train.Supervisor(logdir=self.log_dir)
         with sv.managed_session(master="") as sess:
@@ -208,10 +204,10 @@ class Model:
                         {self.keep_rate : keep_rate})
                 end = time.time()
 
-                if step > 0 and step % 10 == 0:
-                    print("loss {:.4f} at step {}, time {}".format(loss_val, step, end-start))
+                if (step + 1) % 10 == 0:
+                    print("loss {:.4f} at step {}, time {:.4f}".format(loss_val, step, end-start))
 
-                if step > 0 and step % 1000 == 0:
+                if (step + 1) % 1000 == 0 or step == 0:
                     logits, test_real_length_val = sess.run(
                             [test_logits, test_real_length],
                             {self.test_input: test_input_x,
@@ -224,3 +220,4 @@ class Model:
                         best_accuracy = accuracy
                         sv.saver.save(sess, self.log_dir + "/best_model")
                         print("best accuracy model")
+            sv.saver.save(sess, self.log_dir + "/finnal_model")
