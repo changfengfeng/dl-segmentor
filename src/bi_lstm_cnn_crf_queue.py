@@ -141,6 +141,33 @@ class Model:
 
         return correct_label / total_label
 
+    def validate_fscore(self, sess, word_sequence, char_sequence, y, transition_params, crf_input,
+            real_length):
+        logits, real_lengths = sess.run([crf_input, real_length],
+                {self.word_holder: word_sequence, self.char_holder:
+                    char_sequence})
+
+        predict_nozero_total = 0
+        true_no_zero_total = 0
+        predict_match_total = 0
+
+        for logit, validate_y, real_length in zip(
+            logits, y, real_lengths):
+            real_logit = logit[:real_length]
+            real_validate_y = validate_y[:real_length]
+            decoded_seq, _ = tf.contrib.crf.viterbi_decode(real_logit, transition_params)
+
+            predict_nozero_total += np.sum(np.sign(decoded_seq))
+            true_no_zero_total += np.sum(np.sign(real_validate_y))
+
+            predict_match_total += np.sum(np.logical_and(np.sign(decoded_seq),
+                                   np.equal(decoded_seq, real_validate_y)))
+
+        precision = predict_match_total / predict_nozero_total
+        recall = predict_match_total / true_no_zero_total
+        f1 = 0 if (precision + recall) == 0 else 2 * precision * recall / (precision + recall)
+        return precision, recall, f1
+
     def train(self, batch_size, train_data_fn, validate_data_fn):
         """ Creat train op to train the graph on the data
 
@@ -193,16 +220,21 @@ class Model:
                     if (step + 1) % 10 == 0:
                         print("loss {:.4f} at step {}, time {:.4f}".format(loss_val, step + 1, end-start))
 
-                    if (step + 1) % 1000 == 0 or step == 0:
-                        accuracy = self.validate(sess, test_word_input,
+                    if (step + 1) % 100 == 0 or step == 0:
+                        p, r, f1 = self.validate_fscore(sess, test_word_input,
                             test_char_input, test_y, transition_params_val,
                             test_crf_input, test_real_length)
-                        print("accuracy {:.4f} at step {}".format(accuracy, step + 1))
+                        print("p {:.4f} r {:.4f} f1 {:.4f} at step {}".format(p,
+                            r, f1, step + 1))
 
-                        if accuracy > best_accuracy:
-                            best_accuracy = accuracy
+                        if f1 > best_accuracy:
+                            best_accuracy = f1
                             sv.saver.save(sess, self.log_dir + "/best_model")
                             print("best accuracy model")
+                        elif best_accuracy - f1 < 0.001:
+                            sv.saver.save(sess, self.log_dir + "/best_model")
+                            print("best accuracy model in margin")
+
                 except KeyboardInterrupt as e:
                     sv.saver.save(sess, self.log_dir+'/model',
                             global_step=(step + 1))

@@ -19,7 +19,7 @@ tf.flags.DEFINE_integer("filter_num", 50, "")
 tf.flags.DEFINE_integer("hidden_size", 100, "")
 tf.flags.DEFINE_integer("lstm_layers", 1, "")
 tf.flags.DEFINE_float("class_num", 13, "BMES for 3 type + other")
-tf.flags.DEFINE_float("learning_rate", 0.001, "")
+tf.flags.DEFINE_float("learning_rate", 0.01, "")
 tf.flags.DEFINE_float("gradients_clip", 7 , "")
 
 tf.flags.DEFINE_string("train_data_path",
