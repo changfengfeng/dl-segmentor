@@ -18,14 +18,14 @@ echo "_____word2vec"
 #src/word2vec/word2vec -train data/ner_pepole_unk.txt -output data/ner_pepole_vec.txt -size 150 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0  -cbow 0 -iter 3 -min-count 5 -hs 1
 
 echo "_____generate trainning data"
-#python src/generate_ner_train.py \
-#    data/ner_pepole_vec.txt \
-#    data/char_pepole_vec.txt \
-#    data/2014 \
-#    data/all_ner_data.txt
+python src/generate_ner_train.py \
+    data/ner_pepole_vec.txt \
+    data/char_pepole_vec.txt \
+    data/2014 \
+    data/all_ner_data.txt
 
-#sort -u data/all_ner_data.txt > data/all_ner_data.u
-#mv data/all_ner_data.u data/all_ner_data.txt
+sort -u data/all_ner_data.txt > data/all_ner_data.u
+mv data/all_ner_data.u data/all_ner_data.txt
 
 head -n 178121 data/all_ner_data.txt > data/train_ner.txt
 tail -n 2000 data/all_ner_data.txt > data/test_ner.txt
