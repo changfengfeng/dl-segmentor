@@ -20,14 +20,15 @@ class Model:
     def inference(self, X, length, reuse=False):
         length_64 = tf.cast(length, tf.int64)
         with tf.variable_scope("bilstm", reuse=reuse):
-            def _get_cell(num_hidden):
+            def _get_cell(num_hidden, keep_rate):
                 cell = tf.nn.rnn_cell.LSTMCell(num_hidden, reuse=reuse)
                 if not reuse:
-                    cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=0.5)
+                    cell = tf.nn.rnn_cell.DropoutWrapper(cell,
+                            output_keep_prob=keep_rate)
                 return cell
             bilstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
-                    _get_cell(self.num_hidden),
-                    _get_cell(self.num_hidden),
+                    _get_cell(self.num_hidden, 0.5),
+                    _get_cell(self.num_hidden, 0.3),
                     X, length, dtype=tf.float32)
 
         output = tf.concat(bilstm_outputs, 2)
