@@ -5,7 +5,7 @@ from bi_lstm_cnn_crf_queue import Model as BiLstmCnnModel
 
 FLAGS = tf.flags.FLAGS
 
-tf.flags.DEFINE_integer("max_sentence_length", 50, "")
+tf.flags.DEFINE_integer("max_sentence_length", 15, "")
 tf.flags.DEFINE_integer("max_word_length", 5, "")
 
 tf.flags.DEFINE_string("char_embedding_path",
@@ -20,7 +20,7 @@ tf.flags.DEFINE_integer("hidden_size", 100, "")
 tf.flags.DEFINE_integer("lstm_layers", 1, "")
 tf.flags.DEFINE_float("class_num", 13, "BMES for 3 type + other")
 tf.flags.DEFINE_float("learning_rate", 0.01, "")
-tf.flags.DEFINE_float("gradients_clip", 7 , "")
+tf.flags.DEFINE_float("gradients_clip", 5 , "")
 
 tf.flags.DEFINE_string("train_data_path",
         "data/train_ner.txt", "")

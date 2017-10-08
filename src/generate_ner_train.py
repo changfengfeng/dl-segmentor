@@ -3,14 +3,16 @@ import sys
 import os
 import word2vec as w2v
 import traceback
-
-print(sys.version)
+import re
 
 totalLine = 0
 longLine = 0
 
-MAX_LEN = 50
+MAX_LEN = 15
 totalChars = 0
+
+max_sentence_length = 0
+total_length = 0
 
 class WordVectWrapper:
     """ Wrapper on word2vec, provide GetWordIndex method
@@ -30,7 +32,6 @@ class WordVectWrapper:
             # return the unkown word idx
             return self.word_map['<UNK>']
 
-
 class Sentence:
   def __init__(self):
     self.tokens = []
@@ -40,14 +41,28 @@ class Sentence:
     self.tokens.append(token)
 
   def generate_train_line(self, out, word_vob, char_vob):
+
+    global max_sentence_length
+    global longLine
+    global totalLine
+    global total_length
+
     nl = len(self.tokens)
+
+    totalLine += 1
+    total_length += nl
+
     if nl < 3:
       return
     wordi = []
     chari = []
     labeli = []
+    if nl > max_sentence_length:
+        max_sentence_length = nl
     if nl > MAX_LEN:
       nl = MAX_LEN
+      longLine += 1
+      return
     for ti in range(nl):
       t = self.tokens[ti]
       idx = word_vob.GetWordIndex(t.token)
@@ -187,15 +202,22 @@ def main(argc, argv):
     for file in fileList:
       if file.endswith(".txt"):
         curFile = os.path.join(curDir, file)
-        print("processing:%s" % (curFile))
+        #print("processing:%s" % (curFile))
         fp = open(curFile, "r")
         for line in fp.readlines():
           line = line.strip()
-          processLine(line, out, word_vob, char_vob, posVob)
+          # split line by "，"
+          lines = re.split("，|；|：|。|！|？", line)
+          for sub_line in lines:
+            processLine(sub_line, out, word_vob, char_vob, posVob)
         fp.close()
+    print("%s: total:%d, long lines:%d, chars:%d" %
+        (curDir, totalLine, longLine, totalChars))
+    print("max setence length: ", max_sentence_length)
+    if totalLine > 0:
+        print("mean length: ", total_length / totalLine)
+
   out.close()
-  print("total:%d, long lines:%d, chars:%d" %
-        (totalLine, longLine, totalChars))
 
 if __name__ == '__main__':
   main(len(sys.argv), sys.argv)

@@ -151,6 +151,7 @@ class Model:
         true_no_zero_total = 0
         predict_match_total = 0
 
+        print("logits length: ", len(logits))
         for logit, validate_y, real_length in zip(
             logits, y, real_lengths):
             real_logit = logit[:real_length]
@@ -166,6 +167,7 @@ class Model:
         precision = predict_match_total / predict_nozero_total
         recall = predict_match_total / true_no_zero_total
         f1 = 0 if (precision + recall) == 0 else 2 * precision * recall / (precision + recall)
+        print("stats: ", predict_match_total, predict_nozero_total, true_no_zero_total)
         return precision, recall, f1
 
     def train(self, batch_size, train_data_fn, validate_data_fn):
@@ -264,8 +266,8 @@ class Model:
                                   self.max_word_length + k]))
                 ly.append(int(ss[i + self.max_sentence_length * (
                     self.max_word_length + 1)]))
-        wx.append(lwx)
-        cx.append(lcx)
-        y.append(ly)
+            wx.append(lwx)
+            cx.append(lcx)
+            y.append(ly)
         fp.close()
         return np.array(wx), np.array(cx), np.array(y)

@@ -236,7 +236,7 @@ def main(_):
     segmentor = Segmentor(FLAGS.user_dict_path, FLAGS.kcws_char_vocab_path,
             FLAGS.segment_model_path, "segment", 80)
     ner = Ner(FLAGS.char_vocab_path, FLAGS.word_vocab_path,
-            FLAGS.ner_model_path, "ner", 50, 5)
+            FLAGS.ner_model_path, "ner", 15, 5)
     while True:
             sentence = input(">")
             tokens = segmentor.segment(sentence)
