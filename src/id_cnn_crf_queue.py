@@ -55,6 +55,9 @@ class Model:
             return the logits tensor
         """
         embedding_outputs = tf.nn.embedding_lookup(self.embeddings, x_holder)
+        # want to keep the same length of output. so must use padding=SAME,
+        # if using [height, embedding, 1, filter_size] it will padding the
+        # embedding
         inputs = tf.expand_dims(embedding_outputs, axis=1)
 
         with tf.variable_scope("id_cnn", reuse=reuse):

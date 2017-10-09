@@ -7,16 +7,17 @@ import numpy as np
 
 import tensorflow as tf
 import os
+import word2vec as w2v
 from idcnn import Model as IdCNN
 from bilstm import Model as BiLSTM
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('train_data_path', "newcorpus/2014_train.txt",
+tf.app.flags.DEFINE_string('train_data_path', "data/train.txt",
                            'Training data dir')
-tf.app.flags.DEFINE_string('test_data_path', "newcorpus/2014_test.txt",
+tf.app.flags.DEFINE_string('test_data_path', "data/test.txt",
                            'Test data dir')
 tf.app.flags.DEFINE_string('log_dir', "logs", 'The log  dir')
-tf.app.flags.DEFINE_string("word2vec_path", "newcorpus/vec.txt",
+tf.app.flags.DEFINE_string("word2vec_path", "data/char_pepole_vec.txt",
                            "the word2vec data path")
 
 tf.app.flags.DEFINE_integer("max_sentence_len", 80,
@@ -29,7 +30,6 @@ tf.app.flags.DEFINE_integer("train_steps", 150000, "trainning steps")
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "learning rate")
 tf.app.flags.DEFINE_bool("use_idcnn", True, "whether use the idcnn")
 tf.app.flags.DEFINE_integer("track_history", 6, "track max history accuracy")
-
 
 def do_load_data(path):
     x = []
@@ -50,7 +50,6 @@ def do_load_data(path):
         y.append(ly)
     fp.close()
     return np.array(x), np.array(y)
-
 
 class Model:
     def __init__(self, embeddingSize, distinctTagNum, c2vPath, numHidden):
@@ -108,6 +107,7 @@ class Model:
         return loss
 
     def load_w2v(self, path, expectDim):
+        """
         fp = open(path, "r")
         print("load data from:", path)
         line = fp.readline().strip()
@@ -141,6 +141,12 @@ class Model:
             ws[second] = t
         fp.close()
         return np.asarray(ws, dtype=np.float32)
+        """
+        w2v_model = w2v.load(path)
+        assert w2v_model.vectors.shape[1] == expectDim
+        ws = w2v_model.vectors.astype("float32")
+        del w2v_model
+        return ws
 
     def test_unary_score(self):
         P, sequence_length = self.inference(self.inp,

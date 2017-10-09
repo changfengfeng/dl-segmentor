@@ -19,21 +19,17 @@ class Model:
 
     def inference(self, X, length, reuse=False):
         """
-        length_64 = tf.cast(length, tf.int64)
         with tf.variable_scope("bilstm", reuse=reuse):
-            def _get_cell(num_hidden, keep_rate):
-                cell = tf.nn.rnn_cell.LSTMCell(num_hidden, reuse=reuse)
-                if not reuse:
-                    cell = tf.nn.rnn_cell.DropoutWrapper(cell,
-                            output_keep_prob=keep_rate)
-                return cell
             bilstm_outputs, _ = tf.nn.bidirectional_dynamic_rnn(
-                    _get_cell(self.num_hidden, 0.5),
-                    _get_cell(self.num_hidden, 0.3),
-                    X, length, dtype=tf.float32)
+                    tf.contrib.rnn.LSTMCell(self.num_hidden, reuse=reuse),
+                    tf.contrib.rnn.LSTMCell(self.num_hidden, reuse=reuse),
+                    X, length, dtype=tf.float32, scope="dynamic_bilstm")
 
         output = tf.concat(bilstm_outputs, 2)
         output = tf.reshape(output, [-1, self.num_hidden * 2])
+
+        if reuse is None or not reuse:
+            output = tf.nn.dropout(output, 0.5)
 
         matricized_unary_scores = tf.matmul(output, self.W) + self.b
         unary_scores = tf.reshape(
