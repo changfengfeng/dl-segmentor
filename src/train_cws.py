@@ -107,7 +107,6 @@ class Model:
         return loss
 
     def load_w2v(self, path, expectDim):
-        """
         fp = open(path, "r")
         print("load data from:", path)
         line = fp.readline().strip()
@@ -147,7 +146,7 @@ class Model:
         ws = w2v_model.vectors.astype("float32")
         del w2v_model
         return ws
-
+        """
     def test_unary_score(self):
         P, sequence_length = self.inference(self.inp,
                                             reuse=True,
