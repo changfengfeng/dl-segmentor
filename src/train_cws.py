@@ -107,6 +107,7 @@ class Model:
         return loss
 
     def load_w2v(self, path, expectDim):
+        """
         fp = open(path, "r")
         print("load data from:", path)
         line = fp.readline().strip()
@@ -144,9 +145,19 @@ class Model:
         w2v_model = w2v.load(path)
         assert w2v_model.vectors.shape[1] == expectDim
         ws = w2v_model.vectors.astype("float32")
+        unk_idx = -1
+        for i, char in enumerate(w2v_model.vocab):
+            if char == '<UNK>':
+                unk_idx = i
+        assert (unk_idx != -1)
+        if unk_idx != 1:
+            t = ws[1]
+            ws[1] = ws[unk_idx]
+            ws[unk_idx] = t
         del w2v_model
+        print(unk_idx)
         return ws
-        """
+
     def test_unary_score(self):
         P, sequence_length = self.inference(self.inp,
                                             reuse=True,
